@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+moviepy
+openai-whisper
+torch
+groq
+python-multipart
+python-dotenv
+pydantic-settings
