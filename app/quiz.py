@@ -13,17 +13,27 @@ logger.info("Quiz module loaded")
 _client = Groq(api_key=settings.groq_api_key)
 logger.info("Groq client initialized")
 
-def generate_quiz(transcript: str, num_questions: int):
-    logger.info(f"generate_quiz() start — num_questions={num_questions}")
+def generate_quiz(transcript: str, num_questions: int, quiz_type: str = "both") -> str:
     prompt = f"""
-You are an expert trainer. Generate {num_questions} quiz questions (MCQ & short-answer) from this transcript:
+You are an expert trainer. Generate {num_questions} quiz questions from the following transcript.
 
+Transcript:
 \"\"\"
 {transcript}
 \"\"\"
 
-Output JSON list of objects with fields: question, options (list), answer, type.
+Instructions:
+- Output should be a JSON list of objects with fields: `question`, `options` (list), `answer`, `type`.
+- If `type` is "mcq", include `options`.
+- If `type` is "short", leave `options` as an empty list.
+- Only generate questions, not answers, if possible.
+
+Constraints:
+- Only include {quiz_type.upper()} type questions.
+- Types can be: "mcq", "short", or "both".
 """
+    ...
+
     resp = _client.chat.completions.create(
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         messages=[{"role": "user", "content": prompt}],

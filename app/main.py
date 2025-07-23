@@ -4,7 +4,8 @@ import json
 import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from typing import List
-#new 
+
+# ─── Imports ───────────────────────────────────────────────────────────────────
 from app.schemas import (
     VideoToQuizRequest,
     VideoToQuizResponse,
@@ -31,19 +32,27 @@ TEMP_DIR = "tmp"
 os.makedirs(TEMP_DIR, exist_ok=True)
 logger.info(f"Temporary dir ready at {TEMP_DIR}")
 
+# ─── Health Check ──────────────────────────────────────────────────────────────
 @app.get("/health")
 def health_check():
     logger.info("Health check ping")
     return {"status": "ok"}
 
+# ─── Video to Quiz ─────────────────────────────────────────────────────────────
 @app.post("/video-to-quiz", response_model=VideoToQuizResponse)
 async def video_to_quiz(
     num_questions: int = Form(...),
+    quiz_type: str = Form("both"),  # Accept quiz type from user
     video_file: UploadFile = File(...)
 ):
-    logger.info(f"video-to-quiz called — num_questions={num_questions}, filename={video_file.filename}")
+    logger.info(f"video-to-quiz called — num_questions={num_questions}, quiz_type={quiz_type}, filename={video_file.filename}")
 
-    # 1. Save upload
+    # Validate quiz type
+    valid_types = {"mcq", "short", "both"}
+    if quiz_type.lower() not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid quiz_type. Must be one of: {valid_types}")
+
+    # 1. Save uploaded video
     uid = uuid.uuid4().hex
     video_path = os.path.join(TEMP_DIR, f"{uid}.mp4")
     logger.info(f"Saving uploaded video to {video_path}")
@@ -58,19 +67,19 @@ async def video_to_quiz(
         logger.exception("Audio extraction failed")
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 3. Transcribe
+    # 3. Transcribe audio to text
     try:
         transcript = transcribe(audio_path)
     except Exception as e:
         logger.exception("Transcription failed")
         raise HTTPException(status_code=500, detail=f"Transcription error: {e}")
 
-    # 4. Generate quiz JSON
+    # 4. Generate quiz from transcript
     try:
-        raw_quiz = generate_quiz(transcript, num_questions)
+        raw_quiz = generate_quiz(transcript, num_questions, quiz_type)  # Pass quiz_type here
         logger.info(f"Raw quiz output: {repr(raw_quiz)}")
-        
-        # Extract JSON block if wrapped in markdown
+
+        # Clean JSON from markdown blocks
         if "```json" in raw_quiz:
             raw_quiz = raw_quiz.split("```json")[1].split("```")[0].strip()
         elif "```" in raw_quiz:
@@ -79,7 +88,7 @@ async def video_to_quiz(
         logger.exception("Quiz generation failed")
         raise HTTPException(status_code=500, detail=f"Quiz generation error: {e}")
 
-    # 5. Parse JSON into schema
+    # 5. Parse quiz into schema
     try:
         quiz_list = json.loads(raw_quiz)
         quiz_objs: List[QuizQuestion] = [QuizQuestion(**q) for q in quiz_list]
@@ -89,14 +98,13 @@ async def video_to_quiz(
 
     logger.info("video-to-quiz completed successfully")
     return VideoToQuizResponse(transcript=transcript, quiz=quiz_objs)
-#quiz check
 
+# ─── Quiz Check ────────────────────────────────────────────────────────────────
 @app.post("/check-quiz", response_model=QuizCheckResponse)
 def check_quiz_endpoint(payload: QuizCheckRequest):
+    logger.info("check-quiz called")
     try:
-        logger.info("check-quiz called")
         return check_quiz(payload)
     except Exception as e:
         logger.error("Quiz checking failed", exc_info=e)
         raise HTTPException(status_code=500, detail=str(e))
-
